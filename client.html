@@ -1,0 +1,146 @@
+<html><head>
+<title>sim-sim-js example client</title>
+<script src="node_modules/sim-sim-js/client/sim_sim.js"></script>
+<script src="node_modules/socket.io/node_modules/socket.io-client/socket.io.js"></script>
+<script>
+
+function Player(x, y, vx, vy) {
+  this.x = x;
+  this.y = y;
+  this.vx = vx;
+  this.vy = vy;
+}
+
+function MyWorld() {
+  this.players = {};
+}
+
+MyWorld.prototype.getData = function() {
+  return this.players;
+};
+
+MyWorld.prototype.setData = function(data) {
+  this.players = data;
+};
+
+MyWorld.prototype.getChecksum = function() {
+  // no useful checksum for now
+  //   a possible simple implementation would be to JSONify the world state and then md5, or sha1, or crc32 the resulting string
+  return 0;
+};
+
+MyWorld.prototype.playerJoined = function(id) {
+  this.players[id] = new Player(10, 10, 0, 0);
+};
+
+MyWorld.prototype.playerLeft = function(id) {
+  delete this.players[id];
+};
+
+MyWorld.prototype.incomingEvent = function(id, event) {
+  this.players[id].vx = event.vx;
+  this.players[id].vy = event.vy;
+};
+
+MyWorld.prototype.step = function(dt) {
+  for (player_id in this.players) {
+    this.players[player_id].x += this.players[player_id].vx * dt;
+    this.players[player_id].y += this.players[player_id].vy * dt;
+  }
+};
+
+MyWorld.prototype.theEnd = function() {
+  // don't need anything here for now
+}
+
+function main() {
+
+
+  // Create world and simulation
+  var world = new MyWorld();
+
+  var sim = SimSim.createSimulation({
+      adapter: {
+          type: 'socket_io',
+          options: { url: "http://localhost:4050" }
+      },
+      world: world
+  });
+
+  sim.start();
+
+
+
+  // Handle input
+  var velocity = { vx: 0, vy: 0 };
+
+  function handleKeyDown(event) {
+    var old_velocity = { vx: velocity.vx, vy: velocity.vy };
+    if (event.keyCode == 37) { velocity.vx = -50; } // Left cursor key
+    if (event.keyCode == 39) { velocity.vx = 50; } // Right cursor key
+    if (event.keyCode == 38) { velocity.vy = -50; } // Up cursor key
+    if (event.keyCode == 40) { velocity.vy = 50; } // Down cursor key
+
+    // send event if desired player velocity has changed
+    if (old_velocity.vx != velocity.vx || old_velocity.vy != velocity.vy) {
+      sim.sendEvent(velocity);
+    }
+  }
+  function handleKeyUp(event) {
+    var old_velocity = { vx: velocity.vx, vy: velocity.vy };
+    if (event.keyCode == 37) { velocity.vx = 0; } // Left cursor key
+    if (event.keyCode == 39) { velocity.vx = 0; } // Right cursor key
+    if (event.keyCode == 38) { velocity.vy = 0; } // Up cursor key
+    if (event.keyCode == 40) { velocity.vy = 0; } // Down cursor key
+
+    // send event if desired player velocity has changed
+    if (old_velocity.vx != velocity.vx || old_velocity.vy != velocity.vy) {
+      sim.sendEvent(velocity);
+    }
+  }
+
+  document.onkeydown = handleKeyDown;
+  document.onkeyup = handleKeyUp;
+
+
+  // This keeps the simulation ticking, even when the browser window is hidden
+  //   (and thus requestAnimationFrame isn't calling render())
+  //   It doesn't hurt to call update extra times.
+  function update() {
+    var now = window.performance.now() / 1000;
+    sim.update(now);
+  }
+  var updateTimer = setInterval(update, 50);
+
+
+  // Draw the world
+  var canvas = document.getElementById("canvas");
+  var warrior = document.getElementById("warrior");
+
+  function render() {
+    var now = window.performance.now() / 1000;
+    sim.update(now);
+
+    canvas.width = document.body.clientWidth;
+    canvas.height = document.body.clientHeight;
+
+    var ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    for (player_id in world.players) {
+      var player = world.players[player_id];
+      ctx.drawImage(warrior, player.x, player.y);
+    }
+
+    requestAnimationFrame(render);
+  }
+  render();
+}
+
+</script>
+</head>
+<body onload="main()" style="margin: 0;">
+<canvas id="canvas"></canvas>
+<img src="warrior.base.152.png" id="warrior" style="display: none;"/>
+</body>
+</html>
